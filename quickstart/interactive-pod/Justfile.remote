@@ -1,0 +1,9 @@
+# Run these on the cluster
+
+eval MODEL URL:
+    lm_eval --model local-completions --tasks gsm8k \
+    --model_args model={{MODEL}},base_url={{URL}}/v1/completions,num_concurrent=100 \
+    --limit 1000
+
+sweep MODEL OUTFILE URL:
+  OUTFILE={{OUTFILE}} MODEL={{MODEL}} BASE_URL={{URL}} bash ./sweep.sh

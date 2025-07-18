@@ -4,18 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       gateway_type:
-        description: 'Gateway type to use'
+        description: "Gateway type to use"
         required: false
-        default: 'kgateway'
+        default: "kgateway"
         type: choice
         options:
-        - kgateway
-        - istio
-      namespace:
-        description: 'Kubernetes namespace'
-        required: false
-        default: 'llm-d'
-        type: string
+          - kgateway
+          - istio
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,17 +25,20 @@ jobs:
     name: End-to-End Simulation Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     env:
-      NAMESPACE: ${{ inputs.namespace || 'llm-d' }}
+      NAMESPACE: llm-d
       GATEWAY_TYPE: ${{ inputs.gateway_type || 'kgateway' }}
       HF_TOKEN: dummy_token_for_sim
-    
+
     steps:
+      # ──────────────────────────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # ──────────────────────────────────────────────────────────────────────────────
       - name: Create kind config
         run: |
           mkdir -p helpers/kind-testing
@@ -55,16 +53,6 @@ jobs:
               nodeRegistration:
                 kubeletExtraArgs:
                   node-labels: "ingress-ready=true"
-            extraPortMappings:
-            - containerPort: 80
-              hostPort: 80
-              protocol: TCP
-            - containerPort: 443
-              hostPort: 443
-              protocol: TCP
-            - containerPort: 31233
-              hostPort: 31233
-              protocol: TCP
           EOF
 
       - name: Create kind cluster
@@ -74,6 +62,7 @@ jobs:
           cluster_name: llm-d-test
           wait: 120s
 
+      # ──────────────────────────────────────────────────────────────────────────────
       - name: Install dependencies
         run: |
           cd quickstart
@@ -87,136 +76,166 @@ jobs:
 
       - name: Create namespace
         run: |
-          kubectl create namespace ${{ env.NAMESPACE }} || echo "Namespace already exists"
+          kubectl create namespace "${{ env.NAMESPACE }}" || echo "Namespace already exists"
 
-      - name: Deploy LLM-D infrastructure
+      # ──────────────────────────────────────────────────────────────────────────────
+      - name: Deploy LLM‑D infrastructure
         run: |
           cd quickstart
-          chmod +x llmd-infra-installer.sh
           ./llmd-infra-installer.sh \
-            --namespace ${{ env.NAMESPACE }} \
-            --gateway ${{ env.GATEWAY_TYPE }} \
-            --release sim
+            --namespace "${{ env.NAMESPACE }}" \
+            --gateway "${{ env.GATEWAY_TYPE }}" \
+            --release infra-sim
 
-      - name: Wait for infrastructure to be ready
+      - name: Wait for infrastructure pods to be ready
         run: |
-          echo "Waiting for infrastructure pods to be ready..."
+          echo "Waiting for infrastructure pods to be ready…"
           kubectl wait --for=condition=ready pod \
             --selector=app.kubernetes.io/managed-by=Helm \
-            --namespace ${{ env.NAMESPACE }} \
+            --namespace "${{ env.NAMESPACE }}" \
             --timeout=300s || true
 
+      # ──────────────────────────────────────────────────────────────────────────────
       - name: Deploy simulation services with helmfile
         run: |
           cd quickstart/examples/sim
           helmfile --selector managedBy=helmfile apply
 
-      - name: Wait for simulation pods to be ready
+      - name: Wait for all simulation pods to be ready
         run: |
-          echo "Waiting for simulation pods to be ready..."
-          kubectl wait --for=condition=ready pod \
-            --selector=app.kubernetes.io/managed-by=Helm \
-            --namespace ${{ env.NAMESPACE }} \
-            --timeout=300s || true
+          echo "⏳ Waiting for all pods in namespace '${{ env.NAMESPACE }}' to become ready..."
+          kubectl wait pod \
+            --for=condition=Ready \
+            --all \
+            -n "${{ env.NAMESPACE }}" \
+            --timeout=1m
 
+          echo "✅ All pods are ready."
+          kubectl get pods -n "${{ env.NAMESPACE }}"
+
+      # ──────────────────────────────────────────────────────────────────────────────
+      - name: Apply Istio DestinationRule for EPP
+        if: ${{ env.GATEWAY_TYPE == 'istio' }}
+        run: |
+          echo "🔎 Applying Istio DestinationRule for EPP service..."
+          EPP_NAME=$(kubectl get svc -n "${{ env.NAMESPACE }}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | grep -- "-epp" | head -n1)
+          if [[ -z "$EPP_NAME" ]]; then
+            echo "❌ Could not find EPP service"
+            exit 1
+          fi
+          echo "✅ Found EPP service: $EPP_NAME"
+
+          cat <<EOF | kubectl apply -n "${{ env.NAMESPACE }}" -f -
+          apiVersion: networking.istio.io/v1
+          kind: DestinationRule
+          metadata:
+            name: ${EPP_NAME}-insecure-tls
+          spec:
+            host: ${EPP_NAME}
+            trafficPolicy:
+              tls:
+                mode: SIMPLE
+                insecureSkipVerify: true
+          EOF
+
+      # ──────────────────────────────────────────────────────────────────────────────
       - name: Show deployment status
         run: |
-          echo "=== Namespace ${{ env.NAMESPACE }} pods ==="
-          kubectl get pods -n ${{ env.NAMESPACE }}
+          echo "=== Pods ==="
+          kubectl get pods -n "${NAMESPACE}"
           echo ""
           echo "=== Services ==="
-          kubectl get services -n ${{ env.NAMESPACE }}
+          kubectl get svc -n "${NAMESPACE}"
           echo ""
           echo "=== Helm releases ==="
           helm list --all-namespaces
 
-      - name: Find gateway service
+      # ──────────────────────────────────────────────────────────────────────────────
+      - name: Locate inference‑gateway Service
         id: gateway
         run: |
-          # Look for the inference gateway service
-          GATEWAY_SERVICE=$(kubectl get services -n ${{ env.NAMESPACE }} -o jsonpath='{.items[?(@.metadata.name contains "inference-gateway")].metadata.name}' | head -1)
-          if [ -z "$GATEWAY_SERVICE" ]; then
-            echo "Could not find inference gateway service"
-            kubectl get services -n ${{ env.NAMESPACE }}
+          echo "🔍 Searching for inference gateway service…"
+          GATEWAY_SERVICE=$(kubectl get svc -n "${NAMESPACE}" -o jsonpath='{.items[*].metadata.name}' \
+                            | tr ' ' '\n' | grep 'inference-gateway' | head -n1)
+          if [[ -z "$GATEWAY_SERVICE" ]]; then
+            echo "❌ Could not find inference gateway service"
             exit 1
           fi
-          echo "Found gateway service: $GATEWAY_SERVICE"
-          echo "service_name=$GATEWAY_SERVICE" >> $GITHUB_OUTPUT
+          echo "✅ Found gateway service: $GATEWAY_SERVICE"
+          echo "service_name=$GATEWAY_SERVICE" >> "$GITHUB_OUTPUT"
 
-      - name: Port forward gateway service
+      # ──────────────────────────────────────────────────────────────────────────────
+      - name: Port-forward gateway service
+        env:
+          SERVICE_NAME: ${{ steps.gateway.outputs.service_name }}
         run: |
-          kubectl port-forward service/${{ steps.gateway.outputs.service_name }} 8000:80 -n ${{ env.NAMESPACE }} &
+          set -euo pipefail
+
+          echo "🌐 Service definition:"
+          kubectl get svc "$SERVICE_NAME" -n "${NAMESPACE}" -o yaml
+
+          echo "📡 Starting port-forward on service/$SERVICE_NAME (8000 ➜ 80)"
+          kubectl port-forward "service/${SERVICE_NAME}" 8000:80 -n "${NAMESPACE}" >/tmp/pf.log 2>&1 &
           PORT_FORWARD_PID=$!
-          echo "PORT_FORWARD_PID=$PORT_FORWARD_PID" >> $GITHUB_ENV
+          echo "PORT_FORWARD_PID=$PORT_FORWARD_PID" >> "$GITHUB_ENV"
 
-          # Wait a bit for port forward to establish
-          sleep 10
+          # Wait for the tunnel to be ready (fail fast if it exits)
+          echo "Waiting for port-forward tunnel..."
+          for i in {1..10}; do
+            if ! kill -0 "$PORT_FORWARD_PID" 2>/dev/null; then
+              echo "❌ port-forward process died; log:"
+              cat /tmp/pf.log
+              exit 1
+            fi
+            if grep -q "Forwarding from" /tmp/pf.log; then
+              echo "Tunnel is ready."
+              break
+            fi
+            sleep 1
+          done
 
-          # Test if port forward is working
-          curl -f http://localhost:8000/healthz || echo "Health check endpoint not available"
+          echo "🧪 Sanity check: /v1/models"
+          # Use --fail to exit with an error on non-200 responses.
+          # The output will be printed directly to the log.
+          curl --silent --fail --show-error http://localhost:8000/v1/models
 
+          echo "✅ Port‑forward working"
+
+      # ──────────────────────────────────────────────────────────────────────────────
       - name: Test /v1/models endpoint
         run: |
-          echo "Testing /v1/models endpoint..."
-          response=$(curl -s http://localhost:8000/v1/models \
-            -H "Content-Type: application/json" || echo "Request failed")
+          echo "🧪 Testing /v1/models…"
+          response=$(curl --silent --fail http://localhost:8000/v1/models)
           echo "Response: $response"
-          
-          # Basic validation - check if response contains expected structure
-          if echo "$response" | jq -e '.data' > /dev/null 2>&1; then
-            echo "✅ /v1/models endpoint test passed"
-          else
-            echo "❌ /v1/models endpoint test failed - invalid response structure"
-            exit 1
-          fi
+          echo "$response" | jq -e '.data' > /dev/null
+          echo "✅ /v1/models passed"
 
       - name: Test /v1/chat/completions endpoint
         run: |
-          echo "Testing /v1/chat/completions endpoint..."
-          response=$(curl -s http://localhost:8000/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -H "x-model-name: random" \
-            -d '{
-              "model": "random",
-              "messages": [
-                { "role": "user", "content": "How are you today?" }
-              ],
-              "max_tokens": 50
-            }' || echo "Request failed")
+          echo "🧪 Testing /v1/chat/completions…"
+          response=$(curl --silent --fail -X POST http://localhost:8000/v1/chat/completions \
+                   -H "Content-Type: application/json" \
+                   -H "x-model-name: random" \
+                   -d '{ "model":"random","messages":[{ "role":"user","content":"How are you?" }] }')
           echo "Response: $response"
-          
-          # Basic validation - check if response contains expected structure
-          if echo "$response" | jq -e '.choices[0].message.content' > /dev/null 2>&1; then
-            echo "✅ /v1/chat/completions endpoint test passed"
-          else
-            echo "❌ /v1/chat/completions endpoint test failed - invalid response structure"
-            exit 1
-          fi
+          echo "$response" | jq -e '.choices[0].message.content' > /dev/null
+          echo "✅ /v1/chat/completions passed"
 
-      - name: Cleanup port forward
+      - name: Test /v1/completions endpoint
+        run: |
+          echo "🧪 Testing /v1/completions…"
+          response=$(curl --silent --fail -X POST http://localhost:8000/v1/completions \
+                   -H "Content-Type: application/json" \
+                   -d '{ "model":"random","prompt":"Cats or Dogs?" }')
+          echo "Response: $response"
+          echo "$response" | jq -e '.choices[0].text' > /dev/null
+          echo "✅ /v1/completions passed"
+
+      # ──────────────────────────────────────────────────────────────────────────────
+      - name: Validate Uninstall
         if: always()
         run: |
-          if [ ! -z "$PORT_FORWARD_PID" ]; then
-            kill $PORT_FORWARD_PID || true
-          fi
-
-      - name: Show logs on failure
-        if: failure()
-        run: |
-          echo "=== Pod logs for debugging ==="
-          kubectl get pods -n ${{ env.NAMESPACE }}
-          echo ""
-          for pod in $(kubectl get pods -n ${{ env.NAMESPACE }} -o jsonpath='{.items[*].metadata.name}'); do
-            echo "=== Logs for $pod ==="
-            kubectl logs $pod -n ${{ env.NAMESPACE }} --tail=50 || echo "Could not get logs for $pod"
-            echo ""
-          done
-
-      - name: Cleanup deployment
-        if: always()
-        run: |
-          echo "Cleaning up deployment..."
+          echo "🧹 Validating Cleanup…"
           cd quickstart/examples/sim
-          helmfile --selector managedBy=helmfile destroy || echo "Helmfile cleanup failed"
-          helm uninstall sim -n ${{ env.NAMESPACE }} || echo "Helm cleanup failed"
-          kubectl delete namespace ${{ env.NAMESPACE }} || echo "Namespace cleanup failed"
+          helmfile --selector managedBy=helmfile destroy
+          helm uninstall infra-sim -n "${NAMESPACE}"

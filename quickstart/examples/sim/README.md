@@ -24,6 +24,10 @@ cd examples/llm-d-sim
 helmfile --selector managedBy=helmfile apply helmfile.yaml
 ```
 
+---
+
+> Note: if you are deploying Istio as the gateway, e.g. `--gateway istio`, then you will need to apply a `DestinationRule` described in [Temporary Istio Workaround](../../istio-workaround.md).
+
 ## Verify the Installation
 
 1. Firstly, you should be able to list all helm releases to view all charts that should be installed:
@@ -82,16 +86,12 @@ curl -s http://localhost:8000/v1/models \
 5. Try curling the `v1/chat/completions` endpoint:
 
 ```bash
-curl -s http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "x-model-name: random" \
-  -d '{
-    "model": "random",
-    "messages": [
-      { "role": "user", "content": "How are you today?" }
-    ],
-    "max_tokens": 50
-  }' | jq
+curl -X POST http://localhost:8000/v1/completions \
+-H 'Content-Type: application/json' \
+-d '{
+      "model": "random",
+      "prompt": "How are you today?"
+    }' | jq
 {
   "choices": [
     {

@@ -1,10 +1,10 @@
-name: Quickstart e2e on AWS
+name: E2E Accelerator EC2 Test
 
 on:
   workflow_dispatch:
     inputs:
       aws_instance_type:
-        description: 'ec2 instance type (default g6.12xlarge): g6e.2xlarge | g6e.8xlarge | g6e.16xlarge'
+        description: 'EC2 instance type (default g6.12xlarge): g6e.2xlarge | g6e.8xlarge | g6e.16xlarge'
         required: true
         # g6.12xlarge-4xL4-24GB-GPU
         default: 'g6.12xlarge'
@@ -15,7 +15,7 @@ on:
         default: 'main'
         type: string
       disk_size:
-        description: 'AWS instance disk size?'
+        description: 'EC2 instance disk size?'
         required: true
         default: "300"
         type: string
@@ -25,9 +25,9 @@ on:
         default: 10
         type: number
       wait_for_termination:
-        description: 'Wait time (in minutes) before terminating AWS instance:'
+        description: 'Wait time (in minutes) before terminating for debugging:'
         required: true
-        default: 30
+        default: 0
         type: number
 
 permissions:
@@ -144,28 +144,46 @@ jobs:
             sleep 10
           done
 
-      - name: Setup installer pre-requisites
-        id: setup-pre-requisite
+      - name: Clone and Checkout on Remote Instance
+        id: git-checkout-clone
         run: |
-          ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$INSTANCE_IP << 'EOF'
-            # fail fast, show every command as it runs
+          # Pass PR_OR_BRANCH from the runner into the remote session's environment
+          # Use a single-quoted 'EOF' to prevent the runner from expanding the script
+          ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$INSTANCE_IP "export PR_OR_BRANCH='${PR_OR_BRANCH}'; bash -s" << 'EOF'
             set -euo pipefail
             set -x
 
+            # ── install git ───────────────────────────────────────────────
             sudo apt-get update -y
             sudo apt-get install -y git
 
-            # --- repo details ---
-            # REPO_URL="https://github.com/llm-d-incubation/llm-d-infra.git"
+            # ── clone repo ───────────────────────────────────────────────
+            # These variables will now be correctly interpreted by the remote shell
             REPO_URL="https://github.com/nerdalert/llm-d-infra-actions-fork.git"
+            REPO_DIR=$(basename "$REPO_URL" .git)
 
-            echo "🛠️  Running: git clone $REPO_URL"
+            echo "🛠️  Cloning: $REPO_URL"
+            git clone --depth 1 "$REPO_URL"
+            cd "$REPO_DIR"
 
-            git clone "$REPO_URL"
-            cd llm-d-infra-actions-fork/quickstart
-            # cd llm-d-infra/quickstart
+            # ── checkout requested PR or branch ──────────────────────────
+            # This variable is available because it was exported in the ssh command
+            if [[ "$PR_OR_BRANCH" =~ ^[0-9]+$ ]]; then
+              echo "🛠️  Checking out PR #$PR_OR_BRANCH"
+              git fetch origin "pull/$PR_OR_BRANCH/head:pr-$PR_OR_BRANCH"
+              git checkout "pr-$PR_OR_BRANCH"
+            else
+              echo "🛠️  Checking out branch $PR_OR_BRANCH"
+              git checkout "$PR_OR_BRANCH"
+            fi
+          'EOF'
 
-            echo "🛠️  Running: ./install-deps.sh"
+      - name: Setup installer pre-requisites
+        id: setup-pre-requisite
+        run: |
+          ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$INSTANCE_IP << EOF
+            set -e
+            cd llm-d-infra/quickstart
             ./install-deps.sh | tee ~/install-deps.log
           EOF
 
@@ -349,11 +367,14 @@ jobs:
           name: llmd-pod-logs
           path: extracted-logs
 
-      - name: Wait if script failed
-        if: always()
+      - name: Pause before termination (debug window)
+        if: always() && env.TERMINATION_TIMEOUT != '0'
         run: |
-          echo "llm-d Installation failed. Waiting for $TERMINATION_TIMEOUT minutes before terminating AWS instance"
-          sleep $((TERMINATION_TIMEOUT * 60))
+          echo "⏳  Debug pause enabled for $TERMINATION_TIMEOUT minute(s)…"
+          for ((i=1; i<=TERMINATION_TIMEOUT; i++)); do
+            printf "  ⏳  %02d/%02d minute(s) elapsed\n" "$i" "$TERMINATION_TIMEOUT"
+            sleep 60
+          done
 
       - name: Terminate EC2 instance
         if: always()

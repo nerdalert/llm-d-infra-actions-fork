@@ -1,10 +1,10 @@
-name: Quickstart e2e on AWS
+name: E2E Accelerator EC2 Test
 
 on:
   workflow_dispatch:
     inputs:
       aws_instance_type:
-        description: 'ec2 instance type (default g6.12xlarge): g6e.2xlarge | g6e.8xlarge | g6e.16xlarge'
+        description: 'EC2 instance type (default g6.12xlarge): g6e.2xlarge | g6e.8xlarge | g6e.16xlarge'
         required: true
         # g6.12xlarge-4xL4-24GB-GPU
         default: 'g6.12xlarge'
@@ -15,7 +15,7 @@ on:
         default: 'main'
         type: string
       disk_size:
-        description: 'AWS instance disk size?'
+        description: 'EC2 instance disk size?'
         required: true
         default: "300"
         type: string
@@ -25,9 +25,9 @@ on:
         default: 10
         type: number
       wait_for_termination:
-        description: 'Wait time (in minutes) before terminating AWS instance:'
+        description: 'Wait time (in minutes) before terminating for debugging:'
         required: true
-        default: 30
+        default: 0
         type: number
 
 permissions:
@@ -349,7 +349,7 @@ jobs:
           name: llmd-pod-logs
           path: extracted-logs
 
-      - name: Wait if script failed
+      - name: Pause if the termination timeout was set for debugging
         if: always()
         run: |
           echo "llm-d Installation failed. Waiting for $TERMINATION_TIMEOUT minutes before terminating AWS instance"

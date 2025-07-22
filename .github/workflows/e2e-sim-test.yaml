@@ -3,6 +3,10 @@ name: E2E Simulation Test
 on:
   workflow_dispatch:
     inputs:
+      pr_or_branch:
+        description: "Pull‑request number **or** branch name to test (default: main)"
+        required: false
+        default: "main"
       gateway_type:
         description: "Gateway type to use"
         required: false
@@ -35,9 +39,36 @@ jobs:
       # ──────────────────────────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
+      - name: Determine if pr_or_branch is a PR number
+        id: check_pr
+        env:
+          PR_OR_BRANCH: ${{ github.event.inputs.pr_or_branch }}
+        shell: bash
+        run: |
+          # Expose PR_OR_BRANCH for later steps
+          echo "PR_OR_BRANCH=${PR_OR_BRANCH:-main}" >> "$GITHUB_ENV"
+          
+          # Simple numeric test → treat as PR number
+          if [[ "$PR_OR_BRANCH" =~ ^[0-9]+$ ]]; then
+            echo "is_pr=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_pr=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch and checkout PR
+        if: steps.check_pr.outputs.is_pr == 'true'
+        shell: bash
+        run: |
+          git fetch origin pull/"$PR_OR_BRANCH"/merge:pr-"$PR_OR_BRANCH"
+          git checkout pr-"$PR_OR_BRANCH"
+
+      - name: Checkout branch
+        if: steps.check_pr.outputs.is_pr == 'false'
+        shell: bash
+        run: |
+          git fetch --all --tags
+          git checkout "$PR_OR_BRANCH"
       # ──────────────────────────────────────────────────────────────────────────────
       - name: Create kind config
         run: |
@@ -79,7 +110,7 @@ jobs:
           kubectl create namespace "${{ env.NAMESPACE }}" || echo "Namespace already exists"
 
       # ──────────────────────────────────────────────────────────────────────────────
-      - name: Deploy LLM‑D infrastructure
+      - name: Deploy llm-d infra
         run: |
           cd quickstart
           ./llmd-infra-installer.sh \

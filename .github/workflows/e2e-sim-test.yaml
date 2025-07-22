@@ -262,6 +262,10 @@ jobs:
           echo "$response" | jq -e '.choices[0].text' > /dev/null
           echo "✅ /v1/completions passed"
 
+      - name: WTF
+        run: |
+          kubectl get pods -n llm-d
+
       # ──────────────────────────────────────────────────────────────────────────────
       - name: Validate Uninstall
         if: always()

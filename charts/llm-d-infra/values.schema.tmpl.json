@@ -89,6 +89,56 @@
           "required": [],
           "title": "annotations"
         },
+        "destinationRule": {
+          "additionalProperties": true,
+          "description": "see: https://istio.io/latest/docs/reference/config/networking/destination-rule/",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "required": [],
+              "title": "enabled",
+              "type": "boolean"
+            },
+            "exportTo": {
+              "description": "Optional: Control which namespaces can access this DestinationRule",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "exportTo",
+              "type": "array"
+            },
+            "host": {
+              "default": "localhost",
+              "required": [],
+              "title": "host",
+              "type": "string"
+            },
+            "subsets": {
+              "description": "Optional: Define subsets for versioned routing (e.g., by labels)",
+              "items": {
+                "required": []
+              },
+              "required": [],
+              "title": "subsets",
+              "type": "array"
+            },
+            "trafficPolicy": {
+              "additionalProperties": true,
+              "description": " additionalProperties: true @schema Optional: Apply a mesh-wide traffic policy",
+              "required": [],
+              "title": "trafficPolicy"
+            },
+            "workloadSelector": {
+              "additionalProperties": true,
+              "description": " additionalProperties: true @schema Optional: Apply only to specific workloads (via selector labels)",
+              "required": [],
+              "title": "workloadSelector"
+            }
+          },
+          "required": [],
+          "title": "destinationRule"
+        },
         "enabled": {
           "default": "true",
           "description": "Deploy resources related to Gateway",
@@ -102,7 +152,7 @@
           "title": "fullnameOverride"
         },
         "gatewayClassName": {
-          "default": "istio",
+          "default": "kgateway",
           "description": "Gateway class that determines the backend used Currently supported values: \"kgateway\" or \"istio\"",
           "required": [],
           "title": "gatewayClassName"
@@ -126,6 +176,11 @@
                 "number",
                 "boolean"
               ]
+            },
+            "resources": {
+              "$ref": "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/master/master/_definitions.json#/definitions/io.k8s.api.core.v1.ResourceRequirements",
+              "description": "Resource requests/limits \u003cbr /\u003e Ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#resource-requests-and-limits-of-pod-and-container",
+              "required": []
             }
           },
           "required": [],

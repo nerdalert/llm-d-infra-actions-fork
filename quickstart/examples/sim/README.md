@@ -1,4 +1,6 @@
-# Quickstart - LLM-D Simulation Deployment
+# Feature: llm-d Simulation
+
+## Overview
 
 This is a simulation example that demonstrates how to deploy using the llm-d-infra system with the `ghcr.io/llm-d/llm-d-inference-sim` image. This example simulates inference responses and can run on minimal resources without requiring actual GPU hardware.
 
@@ -10,17 +12,17 @@ This is a simulation example that demonstrates how to deploy using the llm-d-inf
 2. Use the quickstart to deploy Gateway CRDS + Gateway provider + Infra chart:
 
 ```bash
-# From the repo root, no need for an actual HF_TOKEN here since we are running a simulator
+# From the repo root
 cd quickstart
-HF_TOKEN=dmummy ./llmd-infra-installer.sh --namespace llm-d -r sim --gateway kgateway
+HF_TOKEN=$(HFTOKEN) ./llmd-infra-installer.sh --namespace llm-d-sim -r infra-sim --gateway kgateway
 ```
 
-    - It should be noted release name `sim` is important here, because it matches up with pre-built values files used in this example.
+    - It should be noted release name `infra-sim` is important here, because it matches up with pre-built values files used in this example.
 
 3. Use the helmfile to apply the modelservice and GIE charts on top of it.
 
 ```bash
-cd examples/llm-d-sim
+cd examples/sim
 helmfile --selector managedBy=helmfile apply helmfile.yaml
 ```
 
@@ -33,7 +35,7 @@ helmfile --selector managedBy=helmfile apply helmfile.yaml
 1. Firstly, you should be able to list all helm releases to view all charts that should be installed:
 
 ```bash
-helm list --all-namespaces --all --debug
+helm list -n llm-d-sim --all --debug
 ```
 
 Note: if you chose to use `istio` as your Gateway provider you would see those (`istiod` and `istio-base` in the `istio-system` namespace) instead of the kgateway based ones.
@@ -52,7 +54,7 @@ In this case we have found that our gateway service is called `sim-inference-gat
 3. `port-forward` the service to we can curl it:
 
 ```bash
-kubectl port-forward service/sim-inference-gateway 8000:80
+kubectl port-forward -n llm-d-sim service/sim-inference-gateway 8000:80
 ```
 
 4. Try curling the `/v1/models` endpoint:
@@ -109,46 +111,17 @@ curl -X POST http://localhost:8000/v1/completions \
 }
 ```
 
-## Scaling Out Inference Replicas
-
-If you want to scale out a decode or prefill replica, you simply adjust the `llm-d-infra/quickstart/examples/sim/ms-sim/values.yaml` file:
-
-```yaml
-decode:
-  create: true
-  replicas: 3 # <- adjust this value to the desired replica count
-```
-
-Then simply apply the new value from the `llm-d-infra/quickstart/examples/sim` directory with:
-
-```shell
-helmfile --selector managedBy=helmfile apply
-```
-
-Now you will see 3 decode pods:
-
-```shell
-kubectl get pods -n llm-d
-NAME                                                 READY   STATUS    RESTARTS   AGE
-gaie-sim-epp-67666fcfb5-mjskd                        1/1     Running   0          12m
-infra-sim-inference-gateway-856ccd85b7-cwwhr         1/1     Running   0          14m
-ms-sim-llm-d-modelservice-decode-55d48485f-2brw8     2/2     Running   0          2m52s
-ms-sim-llm-d-modelservice-decode-55d48485f-bp2w5     2/2     Running   0          12m
-ms-sim-llm-d-modelservice-decode-55d48485f-wpmqc     2/2     Running   0          12m
-ms-sim-llm-d-modelservice-prefill-5f4dc68d77-p9xd9   1/1     Running   0          12m
-```
-
 ## Cleanup
 
 To remove the deployment:
 
 ```bash
 # Remove the model services
-cd examples/sim
+# From examples/sim
 helmfile --selector managedBy=helmfile destroy
 
 # Remove the infrastructure
-helm uninstall sim -n llm-d
+helm uninstall infra-sim -n llm-d-sim
 ```
 
 ## Customization

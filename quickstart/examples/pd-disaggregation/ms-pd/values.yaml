@@ -14,12 +14,13 @@ routing:
       name: infra-pd-inference-gateway
 
   proxy:
-    image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0-RC1
+    image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
     connector: nixlv2
     secure: false
 
   inferenceModel:
-    create: false
+    criticality: Critical
+    create: true
 
   inferencePool:
     create: false
@@ -36,7 +37,7 @@ decode:
   replicas: 1
   containers:
   - name: "vllm"
-    image: "robertgouldshaw2/vllm-nixl:nixl-oh-debug-fixed-0.3" # TODO(rob): update to llm-d image
+    image: "ghcr.io/llm-d/llm-d-dev:v0.1.0-rc.1"
     modelCommand: vllmServe
     args:
       - "--tensor-parallel-size"
@@ -56,12 +57,12 @@ decode:
             fieldPath: status.podIP
     resources:
       limits:
-        memory: 128Gi
+        memory: 64Gi
         cpu: "16"
         nvidia.com/gpu: "4"
         rdma/ib: 1
       requests:
-        memory: 128Gi
+        memory: 64Gi
         cpu: "16"
         nvidia.com/gpu: "4"
         rdma/ib: 1
@@ -88,7 +89,7 @@ prefill:
   replicas: 4
   containers:
   - name: "vllm"
-    image: "robertgouldshaw2/vllm-nixl:nixl-oh-debug-fixed-0.3" # TODO(rob): update to llm-d image
+    image: "ghcr.io/llm-d/llm-d-dev:v0.1.0-rc.1"
     modelCommand: vllmServe
     args:
       - "--block-size"
@@ -100,20 +101,18 @@ prefill:
       - "--max-model-len"
       - "32000"
     env:
-      - name: VLLM_IS_PREFILL # TODO(rob): remove once we bump vllm version
-        value: "1"
       - name: VLLM_NIXL_SIDE_CHANNEL_HOST
         valueFrom:
           fieldRef:
             fieldPath: status.podIP
     resources:
       limits:
-        memory: 32Gi
+        memory: 64Gi
         cpu: "8"
         nvidia.com/gpu: "1"
         rdma/ib: 1
       requests:
-        memory: 32Gi
+        memory: 64Gi
         cpu: "8"
         nvidia.com/gpu: "1"
         rdma/ib: 1

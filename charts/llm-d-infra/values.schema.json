@@ -89,6 +89,56 @@
                     "required": [],
                     "title": "annotations"
                 },
+                "destinationRule": {
+                    "additionalProperties": true,
+                    "description": "see: https://istio.io/latest/docs/reference/config/networking/destination-rule/",
+                    "properties": {
+                        "enabled": {
+                            "default": false,
+                            "required": [],
+                            "title": "enabled",
+                            "type": "boolean"
+                        },
+                        "exportTo": {
+                            "description": "Optional: Control which namespaces can access this DestinationRule",
+                            "items": {
+                                "required": []
+                            },
+                            "required": [],
+                            "title": "exportTo",
+                            "type": "array"
+                        },
+                        "host": {
+                            "default": "localhost",
+                            "required": [],
+                            "title": "host",
+                            "type": "string"
+                        },
+                        "subsets": {
+                            "description": "Optional: Define subsets for versioned routing (e.g., by labels)",
+                            "items": {
+                                "required": []
+                            },
+                            "required": [],
+                            "title": "subsets",
+                            "type": "array"
+                        },
+                        "trafficPolicy": {
+                            "additionalProperties": true,
+                            "description": " additionalProperties: true @schema Optional: Apply a mesh-wide traffic policy",
+                            "required": [],
+                            "title": "trafficPolicy"
+                        },
+                        "workloadSelector": {
+                            "additionalProperties": true,
+                            "description": " additionalProperties: true @schema Optional: Apply only to specific workloads (via selector labels)",
+                            "required": [],
+                            "title": "workloadSelector"
+                        }
+                    },
+                    "required": [],
+                    "title": "destinationRule"
+                },
                 "enabled": {
                     "default": "true",
                     "description": "Deploy resources related to Gateway",
@@ -102,7 +152,7 @@
                     "title": "fullnameOverride"
                 },
                 "gatewayClassName": {
-                    "default": "istio",
+                    "default": "kgateway",
                     "description": "Gateway class that determines the backend used Currently supported values: \"kgateway\" or \"istio\"",
                     "required": [],
                     "title": "gatewayClassName"
@@ -126,6 +176,65 @@
                                 "number",
                                 "boolean"
                             ]
+                        },
+                        "resources": {
+                            "description": "ResourceRequirements describes the compute resource requirements.",
+                            "properties": {
+                                "claims": {
+                                    "description": "Claims lists the names of resources, defined in spec.resourceClaims, that are used by this container.\n\nThis is an alpha field and requires enabling the DynamicResourceAllocation feature gate.\n\nThis field is immutable. It can only be set for containers.",
+                                    "items": {
+                                        "description": "ResourceClaim references one entry in PodSpec.ResourceClaims.",
+                                        "properties": {
+                                            "name": {
+                                                "description": "Name must match the name of one entry in pod.spec.resourceClaims of the Pod where this field is used. It makes that resource available inside a container.",
+                                                "type": "string"
+                                            },
+                                            "request": {
+                                                "description": "Request is the name chosen for a request in the referenced claim. If empty, everything from the claim is made available, otherwise only the result of this request.",
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "name"
+                                        ],
+                                        "type": "object"
+                                    },
+                                    "type": "array",
+                                    "x-kubernetes-list-map-keys": [
+                                        "name"
+                                    ],
+                                    "x-kubernetes-list-type": "map"
+                                },
+                                "limits": {
+                                    "additionalProperties": {
+                                        "oneOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "number"
+                                            }
+                                        ]
+                                    },
+                                    "description": "Limits describes the maximum amount of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+                                    "type": "object"
+                                },
+                                "requests": {
+                                    "additionalProperties": {
+                                        "oneOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "number"
+                                            }
+                                        ]
+                                    },
+                                    "description": "Requests describes the minimum amount of compute resources required. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. Requests cannot exceed Limits. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+                                    "type": "object"
+                                }
+                            },
+                            "type": "object"
                         }
                     },
                     "required": [],

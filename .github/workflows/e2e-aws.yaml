@@ -1,6 +1,9 @@
 name: E2E Accelerator EC2 Test
 
 on:
+  issue_comment: # Runs with a PR comment /run-e2e
+    types: [created]
+
   workflow_dispatch:
     inputs:
       pr_or_branch:
@@ -26,9 +29,25 @@ permissions:
   contents: write
   actions: write
   packages: read
+  issues:   write
 
 jobs:
   setup:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        (
+          contains(github.event.comment.body, '/run-e2e') ||
+          contains(github.event.comment.body, '/run-e2e-istio')
+        ) &&
+        (
+          github.event.comment.author_association == 'OWNER' ||
+          github.event.comment.author_association == 'MEMBER' ||
+          github.event.comment.author_association == 'COLLABORATOR'
+        )
+      )
     runs-on: ubuntu-latest
     outputs:
       instance_id: ${{ steps.launch.outputs.instance_id }}
@@ -41,11 +60,22 @@ jobs:
       HF_TOKEN: ${{secrets.HF_TOKEN}}
       TERMINATION_TIMEOUT: ${{ github.event.inputs.wait_for_termination }}
       DISK_SIZE: "300"
-      PR_OR_BRANCH: ${{ github.event.inputs.pr_or_branch }}
+      PR_OR_BRANCH: ${{ github.event.inputs.pr_or_branch || github.event.issue.number }}
       NAMESPACE: ${{ github.event.inputs.namespace }}
-      GATEWAY_TYPE: ${{ github.event.inputs.gateway_type || 'kgateway' }}
+      GATEWAY_TYPE: ${{ github.event.inputs.gateway_type ||
+        (contains(github.event.comment.body || '', '/run-e2e-istio') && 'istio') ||
+        'kgateway' }}
 
     steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner:  context.repo.owner,
+              repo:   context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: `Sorry @${context.payload.comment.user.login}, you don’t have permission to run this workflow.`
+            })
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -358,6 +388,35 @@ jobs:
             helmfile --selector managedBy=helmfile apply helmfile.yaml --skip-diff-on-install | tee ~/${{ matrix.deployment.helm_log_file }}
           EOF
 
+      - name: Wait for all simulation pods to be ready
+        run: |
+          echo "⏳ Waiting for all pods in namespace '${{ env.NAMESPACE }}' to become ready..."
+          ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$INSTANCE_IP <<EOF
+            set -euo pipefail
+            kubectl wait pod \
+              --for=condition=Ready \
+              --all \
+              -n "${NAMESPACE}" \
+              --timeout=6m
+            sleep 120
+            echo "✅ All pods are ready."
+            kubectl get pods -n "${NAMESPACE}"
+          EOF
+
+      - name: Show deployment status
+        run: |
+          ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$INSTANCE_IP <<EOF
+            set -euo pipefail
+            echo "=== Pods ==="
+            kubectl get pods -n "${NAMESPACE}"
+            echo ""
+            echo "=== Services ==="
+            kubectl get svc -n "${NAMESPACE}"
+            echo ""
+            echo "=== Helm releases ==="
+            helm list -n "${NAMESPACE}" || true
+          EOF
+
       - name: Apply Istio DestinationRule
         if: ${{ env.GATEWAY_TYPE == 'istio' }}
         run: |
@@ -390,7 +449,6 @@ jobs:
               "kubectl apply -n \"$NS\" -f /tmp/destinationrule.yaml && rm /tmp/destinationrule.yaml"
 
       - name: Inference test
-        if: steps.pod-readiness.outcome == 'success'
         run: |
           ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@"$INSTANCE_IP" <<EOF
             set -euo pipefail
@@ -463,3 +521,20 @@ jobs:
           aws ec2 terminate-instances --instance-ids $INSTANCE_ID
           echo "Waiting for instance to be terminated..."
           aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID
+
+  report-result:
+    needs: terminate
+    if: github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ needs.deploy-and-validate.result || 'failure' }}'
+            const emoji  = status === 'success' ? '✅' : '😱'
+            github.rest.issues.createComment({
+              owner:  context.repo.owner,
+              repo:   context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: `${emoji}  E2E run finished with status **${status}**.`
+            })

@@ -153,7 +153,7 @@
                 },
                 "gatewayClassName": {
                     "default": "kgateway",
-                    "description": "Gateway class that determines the backend used Currently supported values: \"kgateway\" or \"istio\"",
+                    "description": "Gateway class that determines the backend used Currently supported values: \"kgateway\", \"istio\", or \"gke-l7-regional-external-managed\"",
                     "required": [],
                     "title": "gatewayClassName"
                 },
@@ -166,6 +166,18 @@
                             "required": [],
                             "title": "enabled",
                             "type": "boolean"
+                        },
+                        "logLevel": {
+                            "default": "info",
+                            "description": " default: info enum: [error,warn,info,debug] @schema",
+                            "enum": [
+                                "error",
+                                "warn",
+                                "info",
+                                "debug"
+                            ],
+                            "required": [],
+                            "title": "logLevel"
                         },
                         "proxyUID": {
                             "default": false,
@@ -181,7 +193,7 @@
                             "description": "ResourceRequirements describes the compute resource requirements.",
                             "properties": {
                                 "claims": {
-                                    "description": "Claims lists the names of resources, defined in spec.resourceClaims, that are used by this container.\n\nThis is an alpha field and requires enabling the DynamicResourceAllocation feature gate.\n\nThis field is immutable. It can only be set for containers.",
+                                    "description": "Claims lists the names of resources, defined in spec.resourceClaims, that are used by this container.\n\nThis field depends on the DynamicResourceAllocation feature gate.\n\nThis field is immutable. It can only be set for containers.",
                                     "items": {
                                         "description": "ResourceClaim references one entry in PodSpec.ResourceClaims.",
                                         "properties": {

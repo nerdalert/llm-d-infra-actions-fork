@@ -312,6 +312,11 @@ jobs:
       GATEWAY_TYPE: ${{ github.event.inputs.gateway_type || 'kgateway' }}
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Setup SSH Key
         run: |
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > key.pem
@@ -380,7 +385,7 @@ jobs:
 
           echo "🔎 Discovering gateway service in namespace ${NAMESPACE}..."
 
-          # Choose the right suffix: Istio adds "-istio" to the gateway Service
+          # Choose the right suffix: Istio adds "-istio"
           BASE_SUFFIX='-inference-gateway'
           [[ "$GATEWAY_TYPE" == 'istio' ]] && SVC_SUFFIX="${BASE_SUFFIX}-istio" || SVC_SUFFIX="${BASE_SUFFIX}"
 

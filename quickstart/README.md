@@ -97,8 +97,14 @@ The installer needs to be run from the `llm-d-infra/quickstart` directory as a c
 | `-k`, `--minikube`                   | Deploy on an existing minikube instance with hostPath storage | `./llmd-infra-installer.sh --minikube`                                 |
 | `-g`, `--context`                    | Supply a specific Kubernetes context                          | `./llmd-infra-installer.sh --context`                                  |
 | `-j`, `--gateway`                    | Select gateway type (istio, kgateway) (default: istio)        | `./llm-installer.sh --gateway kgateway`                          |
-| `-r`, `--release `                   | (Helm) Chart release name                                     | `./llmd-infra-installer.sh --release llm-d-infra`                      |
+| `-r`, `--release`                    | (Helm) Chart release name                                     | `./llmd-infra-installer.sh --release llm-d-infra`                      |
 | `-h`, `--help`                       | Show this help and exit                                       | `./llmd-infra-installer.sh --help`                                     |
+
+***If you follow some [examples](./examples) after this installation, you have to change the namespace name according to the example you'll work on as follows.***
+
+- [inference-scheduling](./examples/inference-scheduling): llm-d-inference-scheduling
+- [pd-disaggregation](./examples/pd-disaggregation): llm-d-pd
+- [precise-prefix-cache-aware](./examples/precise-prefix-cache-aware): llm-d-wide-ep
 
 ## Examples
 
@@ -124,9 +130,9 @@ export HF_TOKEN="your-token"
 
 ### Validation
 
-After executing install script, you can find the resources will be created according to installation option.
+After executing the install script, you will find that resources are created according to the installation options.
 
-#### Installation with istio
+#### Installation with Istio
 
 - istio-system
 
@@ -143,6 +149,8 @@ service/istiod   ClusterIP   [Cluster IP]   <none>        15010/TCP,15012/TCP,44
 ```
 
 - llm-d
+
+***The Namespace name might differ depending on the installation option.***
 
 ```bash
 kubectl get pods,gateway -n llm-d
@@ -189,6 +197,8 @@ kgateway-ddbb7668c-cc9df   1/1     Running   0          25m
 
 - llm-d
 
+***The Namespace name might differ depending on the installation option.***
+
 ```bash
 kubectl get pods,gateway -n llm-d
 ```
@@ -198,7 +208,7 @@ NAME                                                 READY   STATUS    RESTARTS 
 pod/llm-d-infra-inference-gateway-69fd4dcfb9-nzs29   1/1     Running   0          22m
 
 NAME                                                              CLASS      ADDRESS        PROGRAMMED   AGE
-gateway.gateway.networking.k8s.io/llm-d-infra-inference-gateway   kgateway   [External IP]  True         22m
+gateway.gateway.networking.k8s.io/llm-d-infra-inference-gateway   kgateway   [IP Address]   True         22m
 ```
 
 - llm-d-monitoring
@@ -228,7 +238,7 @@ prometheus-community [kube-prometheus-stack helm charts](https://github.com/prom
 
 #### Accessing the Metrics UIs
 
-If running on OpenShift, skip to [OpenShift and Grafana](#openshift-and-grafana).
+If running on OpenShift, skip to [OpenShift and Grafana](./docs/infra-providers/openshift/README-openshift.md#openshift-and-grafana).
 
 #### Port Forwarding
 
@@ -251,9 +261,9 @@ Access the User Interfaces at:
 
 #### Grafana Dashboards
 
-Import the [llm-d dashboard](./grafana/dashboards/llm-d-dashboard.json) from the Grafana UI. Go to `Dashboards -> New -> Import`.
+Import the [llm-d dashboard](./docs/monitoring/grafana/dashboards/llm-d-dashboard.json) from the Grafana UI. Go to `Dashboards -> New -> Import`.
 Similarly, import the [inference-gateway dashboard](https://github.com/kubernetes-sigs/gateway-api-inference-extension/blob/main/tools/dashboards/inference_gateway.json)
-from the gateway-api-inference-extension repository. Or, if the Grafana Operator is installed in your environment, you might follow the [Grafana setup guide](./grafana-setup.md)
+from the gateway-api-inference-extension repository. Or, if the Grafana Operator is installed in your environment, you might follow the [Grafana setup guide](./docs/monitoring/grafana-setup.md)
 to install the dashboards as `GrafanaDashboard` custom resources.
 
 #### Security Note

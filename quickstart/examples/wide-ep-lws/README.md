@@ -3,49 +3,51 @@
 ## Overview
 
 - This example demonstrates how to deploy DeepSeek-R1-0528 using vLLM's P/D disaggregation support with NIXL in a wide expert parallel pattern with LeaderWorkerSets
-- This "path" has been validated on a Cluster with 16xH200 GPUs split across two nodes with infiniband networking
+- This "path" has been validated on a Cluster with 16xH200 GPUs split across two nodes with InfiniBand networking
 
 > WARNING: We are still investigating and optimizing performance for other hardware and networking configurations
 
 In this example, we will demonstrate a deployment of `DeepSeek-R1-0528` with:
+
 - 1 DP=8 Prefill Workers
-- 2 DP=4 Decode Worker
+- 2 DP=4 Decode Workers
 
 ## Installation
 
 1. Install your local dependencies (from `/llm-d-infra/quickstart`)
 
-```bash
-./install-deps.sh
-```
+   ```bash
+   ./install-deps.sh
+   ```
 
-2. Use the quickstart to deploy Gateway CRDS + Gateway provider + Infra chart (from `/llm-d-infra/quickstart`). This example only works out of the box with `Istio` as a provider, but with changes its possible to run this with `kgateway`.
+1. Use the quickstart to deploy Gateway CRDS + Gateway provider + Infra chart (from `/llm-d-infra/quickstart`). This example only works out of the box with `Istio` as a provider, but with changes its possible to run this with `kgateway`.
 
-```bash
-export HF_TOKEN=${HFTOKEN}
-./llmd-infra-installer.sh --namespace llm-d-wide-ep -r infra-wide-ep -f examples/wide-ep-lws/infra-wide-ep/values.yaml --disable-metrics-collection
-```
+   ```bash
+   export HF_TOKEN=${HFTOKEN}
+   ./llmd-infra-installer.sh --namespace llm-d-wide-ep -r infra-wide-ep -f examples/wide-ep-lws/infra-wide-ep/values.yaml --disable-metrics-collection
+   ```
 
-**_NOTE:_** The release name `infra-wide-ep` is important here, because it matches up with pre-built values files used in this example.
+   **_NOTE:_** The release name `infra-wide-ep` is important here, because it matches up with pre-built values files used in this example.
 
-3. Use the helmfile to apply the modelservice chart on top of it
-```bash
-cd examples/wide-ep-lws
-helmfile --selector managedBy=helmfile apply -f helmfile.yaml --skip-diff-on-install
-```
+1. Use the helmfile to apply the modelservice chart on top of it
+
+   ```bash
+   cd examples/wide-ep-lws
+   helmfile --selector managedBy=helmfile apply -f helmfile.yaml --skip-diff-on-install
+   ```
 
 ## Verifying the installation
 
 1. First you should be able to see that both of your release of infra and modelservice charts went smoothly:
 
 ```bash
-helm list -n llm-d-wide-ep
-NAME         	NAMESPACE    	REVISION	UPDATED                             	STATUS  	CHART                    	APP VERSION
-infra-wide-ep	llm-d-wide-ep	1       	2025-07-25 05:43:35.263697 -0700 PDT	deployed	llm-d-infra-v1.1.0       	v0.2.0
-ms-wide-ep   	llm-d-wide-ep	1       	2025-07-25 06:16:29.31419 -0700 PDT 	deployed	llm-d-modelservice-v0.2.0	v0.2.0
+$ helm list -n llm-d-wide-ep
+NAME             NAMESPACE        REVISION    UPDATED                                 STATUS      CHART                        APP VERSION
+infra-wide-ep    llm-d-wide-ep    1           2025-07-25 05:43:35.263697 -0700 PDT   deployed    llm-d-infra-v1.1.1           v0.2.0
+ms-wide-ep       llm-d-wide-ep    1           2025-07-25 06:16:29.31419 -0700 PDT    deployed    llm-d-modelservice-v0.2.0    v0.2.0
 ```
 
-2. You should all the pods you expect to (2 decodes, 1 prefill, 1 gateway pod, 1 EPP pod):
+1. You should all the pods you expect to (2 decodes, 1 prefill, 1 gateway pod, 1 EPP pod):
 
 ```bash
 $ kubectl get pods -n llm-d-wide-ep
@@ -57,14 +59,14 @@ ms-wide-ep-llm-d-modelservice-epp-749696866d-n24tx     1/1     Running   0      
 ms-wide-ep-llm-d-modelservice-prefill-0                1/1     Running   0          22m
 ```
 
-3. You should be able to do inferencing requests. The first thing we need to check is that all our vllm servers have started which can take some time. We recommend using `stern` to grep the decode logs together wand wait for the messaging saying that the vllm API server is spun up:
+1. You should be able to do inferencing requests. The first thing we need to check is that all our vLLM servers have started which can take some time. We recommend using `stern` to grep the decode logs together and wait for the messaging saying that the vLLM API server is spun up:
 
 ```bash
-DECODE_PODS=$(kubectl get pods -n llm-d-wide-ep -l "llm-d.ai/inferenceServing=true,llm-d.ai/role=decode" --no-headers | awk '{print $1}' | tail -n 2)
+DECODE_PODS=$(kubectl get pods -n llm-d-wide-ep -l "llm-d.ai/inferenceServing=true,llm-d.ai/role=decode" --no-headers | awk '{print}' | tail -n 2)
 stern "$(echo "$DECODE_PODS" | paste -sd'|' -)" -c vllm | grep -v "Avg prompt throughput"
 ```
 
-Eventually you should see something logs indicating vllm is ready to start accepting requests:
+Eventually you should see log lines indicating vLLM is ready to start accepting requests:
 
 ```log
 ms-pd-llm-d-modelservice-decode-9666b4775-z8k46 vllm INFO 07-25 13:57:57 [api_server.py:1818] Starting vLLM API server 0 on http://0.0.0.0:8200
@@ -80,7 +82,7 @@ ms-pd-llm-d-modelservice-decode-9666b4775-z8k46 vllm INFO:     Application start
 We also should make sure that prefill has come up:
 
 ```bash
-PREFILL_POD=$(kubectl get pods -n llm-d-wide-ep -l "llm-d.ai/inferenceServing=true,llm-d.ai/role=prefill" | tail -n 1 | awk '{print $1}')
+PREFILL_POD=$(kubectl get pods -n llm-d-wide-ep -l "llm-d.ai/inferenceServing=true,llm-d.ai/role=prefill" | tail -n 1 | awk '{print}')
 kubectl logs pod/${PREFILL_POD} | grep -v "Avg prompt throughput"
 ```
 
@@ -97,16 +99,16 @@ INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 ```
 
-After this we can port-forwarding your gateway service in one terminal:
+After this, we can port-forward your gateway service in one terminal:
 
 ```bash
-$ kubectl port-forward -n llm-d-wide-ep service/infra-wide-ep-inference-gateway-istio 8000:80
+kubectl port-forward -n llm-d-wide-ep service/infra-wide-ep-inference-gateway-istio 8000:80
 ```
 
 And then you should be able to curl your gateway service:
 
 ```bash
-$ curl -s http://localhost:8000/v1/models \
+curl -s http://localhost:8000/v1/models \
   -H "Content-Type: application/json" | jq
 {
   "data": [
@@ -140,10 +142,10 @@ $ curl -s http://localhost:8000/v1/models \
 }
 ```
 
-Finally, we should be able to inferencing `curl`s:
+Finally, we should be able to perform inference with curl:
 
 ```bash
-$ curl -s http://localhost:8000/v1/completions \
+curl -s http://localhost:8000/v1/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "deepseek-ai/DeepSeek-R1-0528",
@@ -182,6 +184,7 @@ $ curl -s http://localhost:8000/v1/completions \
 ## Cleanup
 
 To remove the deployment:
+
 ```bash
 # Remove the model services
 # From examples/wide-ep-lws

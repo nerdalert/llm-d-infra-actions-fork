@@ -1,6 +1,6 @@
 # llm-d-infra Quick Start - Step by step
 
-Getting started with llm-d-infra through step by step procedures.
+Getting started with llm-d-infra through step-by-step procedures.
 
 This guide will walk you through the steps to install and deploy llm-d-infra on a Kubernetes cluster, with the place of customization.
 
@@ -29,9 +29,9 @@ Since the llm-d-infra is based on helm charts, llm-d-infra can be deployed on a 
 This document instruct you the totally following 4 steps to deploy llm-d-infra.
 
 1. Installing GAIE Kubernetes infrastructure
-2. Installing Network stack
-3. Creating HF token secret
-4. Installing llm-d-infra
+1. Installing Network stack
+1. Creating HF token secret
+1. Installing llm-d-infra
 
 Before proceeding with the installation, ensure you have completed the prerequisites and are able to issue kubectl commands to your cluster by configuring your ~/.kube/config file.
 
@@ -78,7 +78,7 @@ After that, deploy istiod.
 helm upgrade -i istiod oci://$HUB/charts/istiod --version $TAG -n istio-system --set tag=$TAG --set hub=$HUB --wait
 ```
 
-The resources are created as follows.
+The resources are created as follows:
 
 ```bash
 kubectl get pods,svc -n istio-system
@@ -92,7 +92,7 @@ NAME             TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)              
 service/istiod   ClusterIP   [Cluster IP]    <none>        15010/TCP,15012/TCP,443/TCP,15014/TCP   41s
 ```
 
-You can also find GatewayClass is created.
+You can also find GatewayClass is created:
 
 ```bash
 kubectl get gc
@@ -106,13 +106,14 @@ istio-remote   istio.io/unmanaged-gateway    True       39s
 
 #### Installing kgateway
 
-Apply kgateway CRD.
+Apply the kgateway CRDs.
 
 ```bash
+KGTW_VERSION="v2.0.4"
 helm upgrade -i \
   --namespace kgateway-system \
   --create-namespace \
-  --version v2.0.3 \
+  --version "${KGTW_VERSION}" \
   kgateway-crds oci://cr.kgateway.dev/kgateway-dev/charts/kgateway-crds
 ```
 
@@ -122,7 +123,7 @@ After that, deploy kgateway.
 helm upgrade -i \
   --namespace kgateway-system \
   --create-namespace \
-  --version v2.0.3 \
+  --version "${KGTW_VERSION}" \
   --set inferenceExtension.enabled=true \
   --set securityContext.allowPrivilegeEscalation=false \
   --set securityContext.capabilities.drop={ALL} \
@@ -131,7 +132,13 @@ helm upgrade -i \
   kgateway oci://cr.kgateway.dev/kgateway-dev/charts/kgateway
 ```
 
-The resources are created as follows.
+Wait for the kgateway rollout to complete:
+
+```bash
+kubectl rollout status deploy/kgateway -n kgateway-system
+```
+
+The resources are created as follows:
 
 ```bash
 kubectl get pods,svc -n kgateway-system
@@ -142,7 +149,7 @@ NAME               TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
 service/kgateway   ClusterIP   [Cluster IP]    <none>        9977/TCP   114s
 ```
 
-You can also find GatewayClass is created.
+You can also find GatewayClass is created:
 
 ```bash
 kubectl get gc
@@ -157,6 +164,13 @@ kgateway-waypoint   kgateway.dev/kgateway         True       25s
 ### 3. Creating HF token secret
 
 Create a namespace to deploy llm-d-infra.
+
+***If you follow some [examples](./examples) after this installation, you have to change the namespace name according to the example you'll work on as follows.***
+
+- [inference-scheduling](./examples/inference-scheduling): llm-d-inference-scheduling
+- [pd-disaggregation](./examples/pd-disaggregation): llm-d-pd
+- [precise-prefix-cache-aware](./examples/precise-prefix-cache-aware): llm-d-wide-ep
+- [llm-d-simulator](./examples/sim): llm-d-sim
 
 ```bash
 export NAMESPACE="llm-d"
@@ -191,7 +205,7 @@ helm dependency build .
 
 We have everything we need to deploy llm-d-infra.
 
-Important: The installation command and its options differ depending on the Network Stack selected in step 2.
+***Important: The installation command and its options differ depending on the Network Stack selected in step 2.***
 
 #### with istio
 
@@ -208,9 +222,11 @@ helm upgrade -i llm-d-infra . --namespace "${NAMESPACE}" \
   --values ./values.yaml \
   --set gateway.gatewayClassName=kgateway \
   --set gateway.gatewayParameters.proxyUID=0
-  --set gateway.serviceType=LoadBalancer
 ```
 
+Service is created as LoadBalancer type.
+
+If you want to change Service type, then please add the `serviceType` option like `--set gateway.serviceType=NodePort`.
 
 ## Validation
 
@@ -226,8 +242,8 @@ kubectl get pods,svc,gateway -n llm-d
 NAME                                                      READY   STATUS    RESTARTS   AGE
 pod/llm-d-infra-inference-gateway-istio-d5959b668-qrc2x   1/1     Running   0          44s
 
-NAME                                          TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)            AGE
-service/llm-d-infra-inference-gateway-istio   ClusterIP   [Cluster IP]    <none>        15021/TCP,80/TCP   44s
+NAME                                          TYPE       CLUSTER-IP      EXTERNAL-IP   PORT(S)                        AGE
+service/llm-d-infra-inference-gateway-istio   NodePort   [Cluster IP]    <none>        15021:30108/TCP,80:32468/TCP   44s
 
 NAME                                                              CLASS   ADDRESS                                                       PROGRAMMED   AGE
 gateway.gateway.networking.k8s.io/llm-d-infra-inference-gateway   istio   llm-d-infra-inference-gateway-istio.llm-d.svc.cluster.local   True         44s
@@ -243,9 +259,9 @@ kubectl get pods,svc,gateway -n llm-d
 NAME                                                READY   STATUS    RESTARTS   AGE
 pod/llm-d-infra-inference-gateway-947558945-8zfwq   1/1     Running   0          6s
 
-NAME                                    TYPE           CLUSTER-IP      EXTERNAL-IP      PORT(S)        AGE
-service/llm-d-infra-inference-gateway   LoadBalancer   [Cluster IP]    [External IP]    80:31572/TCP   6s
+NAME                                    TYPE       CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+service/llm-d-infra-inference-gateway   NodePort   [Cluster IP]    <none>        80:31644/TCP   6s
 
 NAME                                                              CLASS      ADDRESS          PROGRAMMED   AGE
-gateway.gateway.networking.k8s.io/llm-d-infra-inference-gateway   kgateway   [External IP]    True         6s
+gateway.gateway.networking.k8s.io/llm-d-infra-inference-gateway   kgateway   [IP Address]     True         6s
 ```

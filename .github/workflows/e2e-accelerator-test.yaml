@@ -1,9 +1,11 @@
 name: E2E Accelerator EC2 Test
 
 on:
-  issue_comment: # Runs with a PR comment /run-e2e
+  issue_comment:
+    # Runs with a PR comment /run-e2e or /run-e2e-istio
     types: [created]
-
+#  schedule: # TODO: enable once validated functional
+#    - cron: '0 8 * * *'  # 4AM Eastern (08:00 UTC)
   workflow_dispatch:
     inputs:
       pr_or_branch:
@@ -20,16 +22,13 @@ on:
           - kgateway
           - istio
       wait_for_termination:
-        description: 'Wait time (in minutes) before terminating for debugging:'
+        description: 'Wait time (in minutes) before terminating for debugging'
         required: true
         default: 0
         type: number
 
 permissions:
-  contents: write
-  actions: write
   packages: read
-  issues:   write
 
 jobs:
   setup:
@@ -53,6 +52,7 @@ jobs:
       instance_id: ${{ steps.launch.outputs.instance_id }}
       instance_ip: ${{ steps.launch.outputs.instance_ip }}
     env:
+      # g6.12xlarge-4xL4-24GB-GPU; 2 GPUs per matrix deployment
       INSTANCE_TYPE: g6.12xlarge
       AMI_ID: ami-020cba7c55df1f615
       KEY_NAME: ${{ secrets.SSH_KEY_NAME }}
@@ -67,15 +67,6 @@ jobs:
         'kgateway' }}
 
     steps:
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              owner:  context.repo.owner,
-              repo:   context.repo.repo,
-              issue_number: context.payload.issue.number,
-              body: `Sorry @${context.payload.comment.user.login}, you don’t have permission to run this workflow.`
-            })
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -108,7 +99,7 @@ jobs:
           sudo ./aws/install --update
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -133,7 +124,7 @@ jobs:
             --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=llmd-github-ci-runner}]" \
             --query 'Instances[0].InstanceId' \
             --output text)
-          # Added step outputs for other jobs
+
           echo "instance_id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
 
@@ -144,7 +135,7 @@ jobs:
             --instance-ids $INSTANCE_ID \
             --query "Reservations[0].Instances[0].PublicIpAddress" \
             --output text)
-          # Added step outputs for other jobs
+
           echo "instance_ip=$PUBLIC_IP" >> "$GITHUB_OUTPUT"
           echo "INSTANCE_IP=$PUBLIC_IP" >> $GITHUB_ENV
 
@@ -183,7 +174,7 @@ jobs:
             sudo apt-get update -y
             sudo apt-get install -y git
 
-            REPO_URL="https://github.com/nerdalert/llm-d-infra-actions-fork.git"
+            REPO_URL="https://github.com/llm-d-incubation/llm-d-infra.git"
             REPO_DIR=$(basename "$REPO_URL" .git)
 
             echo "🛠️  Cloning: $REPO_URL"
@@ -206,7 +197,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$INSTANCE_IP <<'EOF'
             set -euo pipefail
             set -x
-            cd llm-d-infra-actions-fork/quickstart
+            cd llm-d-infra/quickstart
             ./install-deps.sh | tee ~/install-deps.log
           EOF
 
@@ -303,7 +294,7 @@ jobs:
             sudo install minikube-linux-amd64 /usr/local/bin/minikube && rm minikube-linux-amd64
           EOF
 
-      - name: Start Minikube Cluster
+      - name: Start Shared Minikube Cluster
         run: |
           ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@${{ env.INSTANCE_IP }} <<'EOF'
             set -euo pipefail
@@ -368,9 +359,8 @@ jobs:
           # Ensure the lock is released when the script exits
           trap 'echo "Releasing lock..."; rmdir "$LOCK_DIR" 2>/dev/null || true' exit
           set -x
-          cd llm-d-infra-actions-fork/quickstart
+          cd llm-d-infra/quickstart
           echo "Deploying llm-d infrastructure into namespace: ${{ matrix.deployment.namespace }} ..."
-          ./llmd-infra-installer.sh --namespace "${{ matrix.deployment.namespace }}" ${{ matrix.deployment.installer_args }} --disable-metrics-collection | tee ~/${{ matrix.deployment.log_file }}
           ./llmd-infra-installer.sh \
               --namespace "${{ matrix.deployment.namespace }}" \
               ${{ matrix.deployment.installer_args }} \
@@ -383,22 +373,22 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$INSTANCE_IP << EOF
             set -euo pipefail
             set -x
-            cd llm-d-infra-actions-fork/quickstart/${{ matrix.deployment.example_dir }}
+            cd llm-d-infra/quickstart/${{ matrix.deployment.example_dir }}
             echo "Deploying ${{ matrix.deployment.name }} example..."
             helmfile --selector managedBy=helmfile apply helmfile.yaml --skip-diff-on-install | tee ~/${{ matrix.deployment.helm_log_file }}
           EOF
 
-      - name: Wait for all simulation pods to be ready
+      - name: Wait for all pods to be ready
         run: |
-          echo "⏳ Waiting for all pods in namespace '${{ env.NAMESPACE }}' to become ready..."
-          ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$INSTANCE_IP <<EOF
+          echo "⏳ Waiting for all pods in namespace to become ready..."
+          ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@$INSTANCE_IP "NAMESPACE=$NAMESPACE bash -s" <<'EOF'
             set -euo pipefail
             kubectl wait pod \
               --for=condition=Ready \
               --all \
               -n "${NAMESPACE}" \
               --timeout=6m
-            sleep 120
+            sleep 120 # TODO: remove this once examples have readiness probes
             echo "✅ All pods are ready."
             kubectl get pods -n "${NAMESPACE}"
           EOF
@@ -453,7 +443,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i key.pem ubuntu@"$INSTANCE_IP" <<EOF
             set -euo pipefail
             set -x
-            cd llm-d-infra-actions-fork/.github/scripts/e2e
+            cd llm-d-infra/.github/scripts/e2e
             ./e2e-validate.sh -n "${NAMESPACE}"
           EOF
 
@@ -500,7 +490,7 @@ jobs:
 
     steps:
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -521,20 +511,3 @@ jobs:
           aws ec2 terminate-instances --instance-ids $INSTANCE_ID
           echo "Waiting for instance to be terminated..."
           aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID
-
-  report-result:
-    needs: terminate
-    if: github.event_name == 'issue_comment'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            const status = '${{ needs.deploy-and-validate.result || 'failure' }}'
-            const emoji  = status === 'success' ? '✅' : '😱'
-            github.rest.issues.createComment({
-              owner:  context.repo.owner,
-              repo:   context.repo.repo,
-              issue_number: context.payload.issue.number,
-              body: `${emoji}  E2E run finished with status **${status}**.`
-            })
